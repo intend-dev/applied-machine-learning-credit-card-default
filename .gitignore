@@ -1,0 +1,36 @@
+# ThinkRail (internal tooling state - never commit)
+.thinkrail/
+
+# Environments (never commit)
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Jupyter
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# Personal vault folders
+.obsidian/
+.trash/
+
+# Submission output (built at package time, not tracked)
+submission/
+*.zip
+
+# Regenerated model artifacts (rebuild by running the notebook)
+*.joblib
+*.pkl
+
+# PDF build intermediate output
+build/out/
+
+# Secrets
+.env
+*.key
+*.pem
+secrets.*
