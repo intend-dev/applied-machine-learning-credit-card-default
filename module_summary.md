@@ -1,10 +1,18 @@
 # Machine Learning Analysis Report - Credit Card Default Prediction
 
-3 November 2026
+Author: Francisco Mateus
+
+Dataset: UCI Default of Credit Card Clients (30,000 clients, 24 columns, 22.1% default rate; Taiwan, 2005)
+
+Project: Applied Machine Learning capstone
+
+Program: Master's in Artificial Intelligence, Udacity
+
+Date: 3 November 2026
 
 ## Overview
 
-This report addresses a supervised binary classification task: predicting which clients will default on their next month's credit card payment. The data comes from the Default of Credit Card Clients dataset (Yeh & Lien, 2009; Yeh, 2009), and it's publicly available through the UCI Machine Learning Repository at https://doi.org/10.24432/C55S3H.
+This report addresses a supervised binary classification task: predicting which clients will default on their next month's credit card payment. The data comes from the Default of Credit Card Clients dataset (Yeh, 2009; Yeh & Lien, 2009), and it's publicly available through the UCI Machine Learning Repository at https://doi.org/10.24432/C55S3H.
 
 This analysis compares logistic regression with a random forest; the tuned random forest reaches a ROC AUC of 0.78 and an accuracy of 0.82 on a held-out test set. Lowering the decision cut-off from the standard 0.5 to 0.174 raises the share of defaulters caught from 36% to 72% and reduces the assumed error cost from 4,448 to 3,347 units on the 6,000 test clients.
 
@@ -59,7 +67,7 @@ The confusion matrix at the same cut-off:
 - 223 clients wrongly flagged (false positives)
 - 845 defaulters missed (false negatives)
 
-In total, the model flagged roughly one in ten test clients. Figure 2 compares the test-set ROC curves of the logistic regression, the untuned forest, and this tuned forest.
+In total, the model flagged roughly 12% of test clients. Figure 2 compares the test-set ROC curves of the logistic regression, the untuned forest, and this tuned forest.
 
 ![Figure 2 - ROC curves for the three models on the held-out test set.](figures/figure-2-roc-curves.png)
 

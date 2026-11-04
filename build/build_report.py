@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 import markdown
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
 
 ROOT = Path(__file__).resolve().parent.parent
 MD = ROOT / "module_summary.md"
@@ -40,8 +40,11 @@ HEADINGS = (
 )
 
 DATE_LINE = "3 November 2026"
+COVER_FIELDS = ("Author:", "Dataset:", "Project:", "Date:")
+TITLE = "Machine Learning Analysis Report - Credit Card Default Prediction"
+AUTHOR = "Francisco Mateus"
 
-# Pinned headline values from test-runs/2026-11-03-runall.txt (summary block).
+# Pinned headline values from test-runs/2026-11-04-runall.txt (summary block).
 PINNED = (
     ("0.7788", "majority-class baseline"),
     ("0.7266", "logistic regression CV AUC"),
@@ -69,57 +72,81 @@ IMAGE_COUNT = 2
 
 CSS = """
 @page {
-  size: A4;
-  margin: 20mm 18mm 20mm 18mm;
+  size: letter;
+  margin: 0.9in;
+  @bottom-right {
+    content: counter(page);
+    font-family: "Times New Roman", Times, serif;
+    font-size: 10px;
+    color: #000;
+  }
 }
 body {
-  font-family: "Times New Roman", Georgia, serif;
-  font-size: 11.5pt;
-  line-height: 1.45;
-  color: #111;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #000;
   margin: 0;
+  overflow-wrap: break-word;
 }
-h1 {
-  font-size: 19pt;
-  line-height: 1.2;
-  margin: 0 0 10px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid #222;
+.cover {
+  page-break-after: always;
+  break-after: page;
+  text-align: center;
+  padding-top: 1.5in;
+}
+.cover h1 {
+  font-size: 26.7px;
+  line-height: 1.3;
+  margin: 0 0 1.6em;
+}
+.cover p {
+  margin: 0.15em 0;
+  font-size: 16px;
 }
 h2 {
-  font-size: 14.5pt;
-  margin: 24px 0 8px;
-  padding-bottom: 3px;
-  border-bottom: 1px solid #999;
+  font-size: 21.3px;
+  margin: 1.5em 0 0.6em;
   page-break-after: avoid;
+  break-after: avoid;
 }
 h3 {
-  font-size: 12pt;
-  margin: 18px 0 6px;
+  font-size: 18px;
+  margin: 1.2em 0 0.4em;
   page-break-after: avoid;
+  break-after: avoid;
 }
-p { margin: 0 0 8px; }
-ul, ol { margin: 4px 0 10px 20px; padding: 0; }
-li { margin-bottom: 3px; }
+p { margin: 0 0 0.75em; }
+ul, ol { margin: 0.4em 0 0.9em 1.5em; padding: 0; }
+li { margin-bottom: 0.25em; }
 table {
   border-collapse: collapse;
   width: 100%;
-  margin: 8px 0 14px;
-  font-size: 10.5pt;
+  margin: 0.5em 0 1em;
+  font-size: 14.7px;
   page-break-inside: avoid;
+  break-inside: avoid;
 }
 th, td {
-  border: 1px solid #888;
-  padding: 4px 7px;
+  border: 1px solid #555;
+  padding: 0.25em 0.5em;
   text-align: left;
 }
 th { background: #eeeeee; }
-img {
+figure {
+  margin: 1em 0;
+  page-break-inside: avoid;
+  break-inside: avoid;
+  text-align: center;
+}
+figure img {
   max-width: 100%;
   height: auto;
-  display: block;
-  margin: 14px auto 6px;
-  page-break-inside: avoid;
+}
+figcaption {
+  font-size: 14.7px;
+  margin-top: 0.4em;
+  text-align: left;
 }
 """
 
@@ -137,6 +164,13 @@ TEMPLATE = """<!doctype html>
 </body>
 </html>
 """
+
+# An image paragraph followed by its bold "Figure N." caption becomes one
+# <figure> block, so a page break can never separate the two.
+FIGURE_RE = re.compile(
+    r"<p>(<img\b[^>]*>)</p>\s*<p>(<strong>Figure \d+\.</strong>.*?)</p>",
+    re.S,
+)
 
 
 def sha256(path: Path) -> str:
@@ -161,6 +195,71 @@ def absolutize_images(html_text: str) -> str:
     return re.sub(r'src="([^"]+)"', repl, html_text)
 
 
+def wrap_figures(html_text: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        return f"<figure>{match.group(1)}<figcaption>{match.group(2)}</figcaption></figure>"
+
+    return FIGURE_RE.sub(repl, html_text)
+
+
+def split_cover(html_text: str) -> str:
+    """Everything before the first h2 is the cover page; the rest is the body."""
+    index = html_text.find("<h2")
+    if index == -1:
+        raise SystemExit("FAIL no <h2> section heading found")
+    cover, body = html_text[:index], html_text[index:]
+    return f'<section class="cover">{cover}</section>\n{body}'
+
+
+def has_page_number(page, number: int) -> bool:
+    """True when the page's bottom margin carries its own page number."""
+    content_height = float(page.mediabox.height) * 96 / 72
+    found = False
+
+    def visit(text, cm, tm, font_dict, font_size):
+        nonlocal found
+        if text.strip() == str(number) and tm[5] > 0.9 * content_height:
+            found = True
+
+    page.extract_text(visitor_text=visit)
+    return found
+
+
+def heading_pages(reader: PdfReader) -> dict[str, int]:
+    """Page index for each section heading, scanned in document order."""
+    page_for: dict[str, int] = {}
+    start = 0
+    for heading in HEADINGS:
+        for index in range(start, len(reader.pages)):
+            flat = re.sub(r"\s+", " ", reader.pages[index].extract_text() or "")
+            if heading in flat:
+                page_for[heading] = index
+                start = index
+                break
+    return page_for
+
+
+def add_outline_and_metadata() -> None:
+    """Add the seven section bookmarks and the title/author metadata."""
+    reader = PdfReader(str(PDF))
+    page_for = heading_pages(reader)
+    missing = [h for h in HEADINGS if h not in page_for]
+    if missing:
+        raise SystemExit(f"FAIL bookmark target not found: {missing}")
+
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    writer.add_metadata({"/Title": TITLE, "/Author": AUTHOR})
+    for heading in HEADINGS:
+        writer.add_outline_item(heading, page_for[heading])
+
+    temp = OUT_DIR / "module_summary.outline.pdf"
+    with open(temp, "wb") as handle:
+        writer.write(handle)
+    temp.replace(PDF)
+
+
 def main() -> int:
     if not MD.is_file():
         return fail([f"source missing: {MD}"])
@@ -168,13 +267,15 @@ def main() -> int:
         return fail([f"chrome missing: {CHROME}"])
 
     md_hash_before = sha256(MD)
-    body = markdown.markdown(
+    html_text = markdown.markdown(
         MD.read_text(encoding="utf-8"), extensions=["extra", "sane_lists"]
     )
-    body = absolutize_images(body)
+    html_text = absolutize_images(html_text)
+    html_text = wrap_figures(html_text)
+    html_text = split_cover(html_text)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    HTML.write_text(TEMPLATE.format(css=CSS, body=body), encoding="utf-8")
+    HTML.write_text(TEMPLATE.format(css=CSS, body=html_text), encoding="utf-8")
 
     if PDF.exists():
         PREV_PDF.parent.mkdir(parents=True, exist_ok=True)
@@ -199,6 +300,8 @@ def main() -> int:
     if PDF.read_bytes()[:4] != b"%PDF":
         return fail(["PDF does not start with %PDF"])
 
+    add_outline_and_metadata()
+
     reader = PdfReader(str(PDF))
     problems: list[str] = []
     texts: list[str] = []
@@ -210,8 +313,17 @@ def main() -> int:
         image_count += page_images
         if not text.strip() and page_images == 0:
             problems.append(f"blank page {number}")
+        if not has_page_number(page, number):
+            problems.append(f"page number missing on page {number}")
 
     flat = re.sub(r"\s+", " ", "\n".join(texts))
+
+    cover_text = texts[0] if texts else ""
+    for field in COVER_FIELDS:
+        if field not in cover_text:
+            problems.append(f"cover field missing: {field}")
+    if "Overview" in cover_text:
+        problems.append("cover page contains body content (Overview)")
 
     for heading in HEADINGS:
         if heading not in flat:
@@ -223,6 +335,29 @@ def main() -> int:
             problems.append(f"pinned value missing: {value} ({label})")
     if image_count != IMAGE_COUNT:
         problems.append(f"image count {image_count} != {IMAGE_COUNT}")
+
+    # Each figure caption must sit on a page that carries an image.
+    for number, page in enumerate(reader.pages, 1):
+        text = texts[number - 1]
+        for figure in ("Figure 1.", "Figure 2."):
+            if figure in text and len(page.images) == 0:
+                problems.append(f"{figure} caption on page {number} without its image")
+
+    outline = [item for item in reader.outline if not isinstance(item, list)]
+    titles = [str(item.title) for item in outline]
+    if titles != list(HEADINGS):
+        problems.append(f"bookmarks mismatch: {titles}")
+    else:
+        expected = heading_pages(reader)
+        for item in outline:
+            if reader.get_destination_page_number(item) != expected.get(str(item.title)):
+                problems.append(f"bookmark target wrong: {item.title}")
+
+    metadata = reader.metadata or {}
+    if (metadata.get("/Author") or "") != AUTHOR:
+        problems.append("PDF author metadata missing")
+    if "Credit Card Default Prediction" not in (metadata.get("/Title") or ""):
+        problems.append("PDF title metadata missing")
 
     text = "\n".join(texts)
     if "`" in text:
@@ -239,7 +374,7 @@ def main() -> int:
     if problems:
         return fail(problems)
 
-    print(f"PASS pages={len(reader.pages)} images={image_count} size={PDF.stat().st_size} bytes")
+    print(f"PASS pages={len(reader.pages)} images={image_count} bookmarks={len(outline)} size={PDF.stat().st_size} bytes")
     print(f"pdf sha256={sha256(PDF)}")
     print(f"md  sha256={md_hash_after}  source md unchanged")
     return 0
