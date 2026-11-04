@@ -3,7 +3,7 @@
 ## Overview
 
 This project builds and tunes a model that predicts next-month credit card default, using the UCI Default of Credit Card Clients dataset (Yeh & Lien, 2009; Yeh, 2009). The tuned random forest reaches ROC AUC `0.7799` on a held-out test set, and a cost-tuned cut-off cuts the expected bank loss from `4,448` to `3,347` units.
-Repository: https://github.com/intend-dev/MS-09-CAP-04-AML
+Repository: https://github.com/intend-dev/applied-machine-learning-credit-card-default
 
 ## Repository
 
