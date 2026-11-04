@@ -34,3 +34,4 @@ build/out/
 *.key
 *.pem
 secrets.*
+/.vscode
